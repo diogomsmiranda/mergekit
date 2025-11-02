@@ -98,6 +98,15 @@ STATIC_MERGE_METHODS: List[MergeMethod] = [
         method_pretty_name="Linear DELLA",
         method_reference_url="https://arxiv.org/abs/2406.11617",
     ),
+    GeneralizedTaskArithmeticMerge(
+        consensus_method=None,
+        sparsification_method=SparsificationMethod.top_magprune,
+        default_normalize=False,
+        default_rescale=True,
+        method_name="top_magprune",
+        method_pretty_name="Top Magnitude Pruning",
+        method_reference_url="https://arxiv.org/abs/2406.11617",
+    ),
 ]
 
 REGISTERED_MERGE_METHODS: Dict[str, MergeMethod] = {

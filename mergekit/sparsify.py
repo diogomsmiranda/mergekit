@@ -12,6 +12,7 @@ class SparsificationMethod(str, Enum):
     random = "random"
     magnitude_outliers = "magnitude_outliers"
     della_magprune = "della_magprune"
+    top_magprune = "top_magprune"
 
 
 class RescaleNorm(str, Enum):
@@ -69,6 +70,27 @@ def magnitude(
         w = w.float()
     topk = torch.argsort(w, descending=True)[:k]
     mask.view(-1)[topk] = 1
+
+    res = rescaled_masked_tensor(tensor, mask, rescale_norm)
+    return res
+
+
+def top_magprune(
+    tensor: torch.Tensor, density: float, rescale_norm: Optional[RescaleNorm] = None
+) -> torch.Tensor:
+    """Masks out the largest values, retaining a proportion of `density` (bottom-|x|)."""
+    if density >= 1:
+        return tensor
+
+    k = int(density * tensor.numel())
+
+    assert k > 0, "not gonna zero out the whole tensor buddy"
+    mask = torch.zeros_like(tensor)
+    w = tensor.abs().view(-1)
+    if w.device.type == "cpu":
+        w = w.float()
+    bottomk = torch.argsort(w, descending=False)[:k]
+    mask.view(-1)[bottomk] = 1
 
     res = rescaled_masked_tensor(tensor, mask, rescale_norm)
     return res
@@ -195,5 +217,7 @@ def sparsify(
         return della_magprune(
             tensor, density=density, epsilon=epsilon, rescale_norm=rescale_norm
         )
+    elif method == SparsificationMethod.top_magprune:
+        return top_magprune(tensor, density=density, rescale_norm=rescale_norm)
     else:
         raise NotImplementedError(method)
