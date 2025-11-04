@@ -13,6 +13,7 @@ class SparsificationMethod(str, Enum):
     magnitude_outliers = "magnitude_outliers"
     della_magprune = "della_magprune"
     top_magprune = "top_magprune"
+    della_inv_magprune = "della_inv_magprune"
 
 
 class RescaleNorm(str, Enum):
@@ -197,6 +198,46 @@ def della_magprune(
     return res.to(tensor.dtype).reshape(orig_shape)
 
 
+def della_inv_magprune(
+    tensor: torch.Tensor,
+    density: float,
+    epsilon: float,
+    rescale_norm: Optional[RescaleNorm] = None,
+) -> torch.Tensor:
+    if density >= 1:
+        return tensor
+    if density <= 0:
+        return torch.zeros_like(tensor)
+    orig_shape = tensor.shape
+
+    if density + epsilon >= 1 or density - epsilon <= 0:
+        raise ValueError(
+            "Epsilon must be chosen such that density +/- epsilon is in (0, 1)"
+        )
+
+    work_dtype = (
+        tensor.dtype
+        if tensor.device.type != "cpu" or tensor.dtype == torch.bfloat16
+        else torch.float32
+    )
+
+    if len(tensor.shape) < 2:
+        tensor = tensor.unsqueeze(0)
+    magnitudes = tensor.abs()
+
+    sorted_indices = torch.argsort(magnitudes, dim=1, descending=True)
+    ranks = sorted_indices.argsort(dim=1).to(work_dtype) + 1
+
+    min_ranks = ranks.min(dim=1, keepdim=True).values
+    max_ranks = ranks.max(dim=1, keepdim=True).values
+    rank_norm = ((ranks - min_ranks) / (max_ranks - min_ranks)).clamp(0, 1)
+    probs = (density - epsilon) + rank_norm * 2 * epsilon
+    mask = torch.bernoulli(probs).to(work_dtype)
+
+    res = rescaled_masked_tensor(tensor.to(work_dtype), mask, rescale_norm)
+    return res.to(tensor.dtype).reshape(orig_shape)
+
+
 def sparsify(
     tensor: torch.Tensor,
     density: float,
@@ -219,5 +260,9 @@ def sparsify(
         )
     elif method == SparsificationMethod.top_magprune:
         return top_magprune(tensor, density=density, rescale_norm=rescale_norm)
+    elif method == SparsificationMethod.della_inv_magprune:
+        return della_inv_magprune(
+            tensor, density=density, epsilon=epsilon, rescale_norm=rescale_norm
+        )
     else:
         raise NotImplementedError(method)
